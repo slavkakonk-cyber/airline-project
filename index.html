@@ -130,7 +130,7 @@
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
 
-        const response = await fetch('http://127.0.0.1:8000/login', {
+        const response = await fetch('/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
@@ -158,9 +158,9 @@
         document.getElementById('auth-block').classList.remove('d-none');
         document.getElementById('auth-message').style.display = 'none';
 
-        // --- ВОТ ЭТИ ДВЕ СТРОЧКИ НУЖНО ДОБАВИТЬ ---
-        document.getElementById('result-text').style.display = 'none'; // Прячем плашку с результатом
-        document.getElementById('result-text').innerHTML = '';         // Очищаем текст внутри
+      
+        document.getElementById('result-text').style.display = 'none'; 
+        document.getElementById('result-text').innerHTML = '';        
         // ------------------------------------------
 
         if (myChartInstance) {
@@ -173,7 +173,7 @@
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
 
-        const response = await fetch('http://127.0.0.1:8000/register', {
+        const response = await fetch('/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
@@ -215,7 +215,7 @@
         const date = document.getElementById('date').value;
         const price = parseFloat(document.getElementById('price').value);
 
-        const response = await fetch('http://127.0.0.1:8000/predict', {
+        const response = await fetch('/predict', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
