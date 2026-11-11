@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Airline Demand Forecast</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+    <style>
+        body { transition: background-color 0.3s, color 0.3s; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .card-header { background-color: #007bff; color: white; border-radius: 15px 15px 0 0 !important; }
+        [data-bs-theme="dark"] .card { background-color: #212529; color: white; }
+        [data-bs-theme="dark"] .form-control, [data-bs-theme="dark"] .form-select { background-color: #343a40; color: white; border: 1px solid #495057; }
+        [data-bs-theme="dark"] .card-header { background-color: #0d6efd; }
+        /* Кнопка переключения темы */
+        .theme-toggle { position: absolute; top: 15px; right: 15px; cursor: pointer; font-size: 24px; }
+    </style>
+</head>
+<body>
+
+<div class="container mt-5 position-relative">
+    <!-- Переключатель темы -->
+    <div class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">
+        <span id="theme-icon">🌙</span>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header text-center">
+                    <h3 class="mb-0"><i class="fa-solid fa-plane-departure me-2"></i>Прогноз спроса</h3>
+                </div>
+                <div class="card-body p-4">
+
+                    <div id="auth-block">
+                        <h5 class="text-center mb-3">Вход в систему</h5>
+                        <div class="mb-3">
+                            <label class="form-label">Логин</label>
+                            <input type="text" id="username" class="form-control" value="admin">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Пароль</label>
+                            <input type="password" id="password" class="form-control" value="password123">
+                        </div>
+                        <button onclick="login()" class="btn btn-primary w-100 mb-2">Войти</button>
+                        <button onclick="register()" class="btn btn-outline-secondary w-100">Зарегистрироваться</button>
+                        <div id="auth-message" class="mt-3 text-center fw-bold" style="display: none;"></div>
+                    </div>
+
+                                        <div id="predict-block" class="d-none">
+                        <div class="text-end mb-2">
+                            <button onclick="logout()" class="btn btn-sm btn-outline-danger">Выйти</button>
+                        </div>
+                        <h5 class="text-center mb-3">Данные рейса</h5>
+
+                        <div class="mb-3">
+                            <label class="form-label">Маршрут</label>
+                            <select id="route" class="form-select">
+                                <option value="MOW-AER">MOW-AER (Москва — Сочи)</option>
+                                <option value="MOW-LED">MOW-LED (Москва — СПб)</option>
+                                <option value="MOW-KGD">MOW-KGD (Москва — Калининград)</option>
+                                <option value="MOW-OVB">MOW-OVB (Москва — Новосибирск)</option>
+                                <option value="MOW-MRV">MOW-MRV (Москва — Мин. Воды)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Дата вылета</label>
+                            <input type="date" id="date" class="form-control" value="2026-06-01">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Цена билета (руб.)</label>
+                            <input type="number" id="price" class="form-control" value="5000">
+                        </div>
+
+                        <button onclick="predict()" class="btn btn-success w-100 mb-4">Рассчитать прогноз</button>
+
+                        <div class="alert alert-info text-center fw-bold" id="result-text" style="display: none;"></div>
+
+                        <div class="chart-container" style="position: relative; height:300px; width:100%">
+                            <canvas id="myChart"></canvas>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let token = "";
+    let myChartInstance = null;
+
+    // --- ТЕМНАЯ ТЕМА ---
+        function toggleTheme() {
+        const html = document.documentElement;
+        const icon = document.getElementById('theme-icon');
+
+        if (html.getAttribute('data-bs-theme') === 'light') {
+            html.setAttribute('data-bs-theme', 'dark');
+            icon.textContent = '☀️';
+        } else {
+            html.setAttribute('data-bs-theme', 'light');
+            icon.textContent = '🌙';
+        }
+
+        // Если график уже нарисован, обновляем его цвета
+        if (myChartInstance) {
+            const isDark = html.getAttribute('data-bs-theme') === 'dark';
+            const textColor = isDark ? '#ffffff' : '#000000';
+            const gridColor = isDark ? '#495057' : '#e9ecef';
+
+            myChartInstance.options.scales.y.ticks.color = textColor;
+            myChartInstance.options.scales.x.ticks.color = textColor;
+            myChartInstance.options.scales.y.grid.color = gridColor;
+            myChartInstance.options.plugins.legend.labels.color = textColor;
+
+            myChartInstance.update(); // Применяем изменения
+        }
+    }
+
+    // --- ЛОГИН ---
+    async function login() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+
+        const response = await fetch('http://127.0.0.1:8000/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const msgDiv = document.getElementById('auth-message');
+        msgDiv.style.display = 'block';
+
+        if (response.ok) {
+            const data = await response.json();
+            token = data.access_token;
+            document.getElementById('auth-block').classList.add('d-none');
+            document.getElementById('predict-block').classList.remove('d-none');
+            msgDiv.className = 'mt-3 text-center fw-bold text-success';
+            msgDiv.innerHTML = 'Успешный вход!';
+        } else {
+            msgDiv.className = 'mt-3 text-center fw-bold text-danger';
+            msgDiv.innerHTML = 'Ошибка: неверный логин или пароль';
+        }
+    }
+        function logout() {
+        token = "";
+
+        document.getElementById('predict-block').classList.add('d-none');
+        document.getElementById('auth-block').classList.remove('d-none');
+        document.getElementById('auth-message').style.display = 'none';
+
+        // --- ВОТ ЭТИ ДВЕ СТРОЧКИ НУЖНО ДОБАВИТЬ ---
+        document.getElementById('result-text').style.display = 'none'; // Прячем плашку с результатом
+        document.getElementById('result-text').innerHTML = '';         // Очищаем текст внутри
+        // ------------------------------------------
+
+        if (myChartInstance) {
+            myChartInstance.destroy();
+            myChartInstance = null;
+        }
+    }
+    // --- РЕГИСТРАЦИЯ ---
+    async function register() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+
+        const response = await fetch('http://127.0.0.1:8000/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const msgDiv = document.getElementById('auth-message');
+        msgDiv.style.display = 'block';
+
+        if (response.ok) {
+            msgDiv.className = 'mt-3 text-center fw-bold text-success';
+            msgDiv.innerHTML = 'Регистрация успешна! Теперь нажмите "Войти"';
+        } else {
+            const errorData = await response.json();
+            let errorText = 'Ошибка регистрации';
+
+            if (Array.isArray(errorData.detail) && errorData.detail.length > 0) {
+                const err = errorData.detail[0];
+                if (err.msg && err.msg.includes("characters")) {
+                    if (err.loc.includes('password')) errorText = 'Пароль должен содержать минимум 8 символов';
+                    else if (err.loc.includes('username')) errorText = 'Логин должен содержать минимум 3 символа';
+                    else errorText = 'Слишком короткое значение';
+                } else if (err.msg) {
+                    errorText = err.msg.replace("Value error, ", "");
+                }
+            } else if (errorData.detail) {
+                if (errorData.detail === "Username already exists") errorText = "Пользователь с таким логином уже существует";
+                else if (errorData.detail === "Incorrect username or password") errorText = "Неверный логин или пароль";
+                else errorText = errorData.detail;
+            }
+
+            msgDiv.className = 'mt-3 text-center fw-bold text-danger';
+            msgDiv.innerHTML = errorText;
+        }
+    }
+
+    // --- ПРОГНОЗ И ГРАФИК ---
+    async function predict() {
+        const route = document.getElementById('route').value;
+        const date = document.getElementById('date').value;
+        const price = parseFloat(document.getElementById('price').value);
+
+        const response = await fetch('http://127.0.0.1:8000/predict', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ route, date, price })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+
+            const soldRounded = Math.round(data.sold);
+            const freeSeatsRounded = Math.round(data.seats - data.sold);
+
+            const resultDiv = document.getElementById('result-text');
+            resultDiv.style.display = 'block';
+
+            let message = `При цене <b>${price} руб.</b> прогнозируется продажа <b>${soldRounded}</b> билетов.`;
+
+            if (soldRounded >= data.seats) {
+                message += `<br>⚠️ Внимание: спрос превышает количество мест (${data.seats}). Рекомендуется поднять цену!`;
+                resultDiv.className = 'alert alert-warning text-center fw-bold';
+            } else {
+                message += ` Осталось свободных мест: <b>${freeSeatsRounded}</b>.`;
+                resultDiv.className = 'alert alert-success text-center fw-bold';
+            }
+            resultDiv.innerHTML = message;
+
+            const labels = Object.keys(data.quantiles).map(q => `Сценарий ${q}`);
+            const values = Object.values(data.quantiles).map(item => item.demand);
+
+            // Делаем цвет для медианы (0.5) ярче, а для остальных — прозрачнее
+            const backgroundColors = Object.keys(data.quantiles).map(q => {
+                return q === '0.5' ? 'rgba(255, 99, 132, 1)' : 'rgba(0, 123, 255, 0.4)'; // Красный для медианы, синий для остальных
+            });
+
+            const ctx = document.getElementById('myChart').getContext('2d');
+            if (myChartInstance) { myChartInstance.destroy(); }
+
+            // Настройка цвета текста в зависимости от темы
+            const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+            const textColor = isDark ? '#ffffff' : '#000000';
+
+            myChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Прогноз спроса (чел.)',
+                            data: values,
+                            backgroundColor: backgroundColors, // Применяем новые цвета
+                            borderColor: 'rgba(0, 123, 255, 1)',
+                            borderWidth: 1,
+                            borderRadius: 5,
+                            order: 2
+                        },
+                        {
+                            label: `Всего мест: ${data.seats}`,
+                            data: Array(labels.length).fill(data.seats),
+                            type: 'line',
+                            borderColor: 'red',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: isDark ? '#495057' : '#e9ecef' },
+                            ticks: { color: textColor }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: textColor }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: textColor }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    if (context.datasetIndex === 0 && context.label === 'Сценарий 0.5') {
+                                        return `Самый вероятный спрос: ${Math.round(context.raw)} чел.`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            alert('Ошибка при запросе прогноза');
+        }
+    }
+</script>
+</body>
+</html>
