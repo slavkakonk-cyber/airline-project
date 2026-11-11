@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, field_validator
 import re
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # =========================
 # CONFIGURATION
@@ -306,7 +308,5 @@ def predict(
 # HEALTH CHECK
 # =========================
 @app.get("/")
-def home():
-    return {
-        "message": "Airline Demand Forecast API is running"
-    }
+async def read_index():
+    return FileResponse("index.html")
