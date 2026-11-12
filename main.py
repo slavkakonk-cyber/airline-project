@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import jwt
-from pwdlib import PasswordHash
+from pwdlib import PasswordHash #ИМПОРТИРУЮ ВСЕ НУЖНЫЕ МНЕ БИБЛИОТЕКИ
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,15 +18,18 @@ from fastapi.responses import FileResponse
 # =========================
 # CONFIGURATION
 # =========================
+# Задаю пути к файлам, чтобы сервер знал, где лежат данные и база
 BASE_DIR = Path(__file__).resolve().parent
 FORECAST_FILE = BASE_DIR / "my_forecast.csv"
 ROUTES_FILE = BASE_DIR / "routes.csv"
 DATABASE_FILE = BASE_DIR / "users.db"
 
+# Секретный ключ для подписи токенов. Если его украдут то смогут подделать пропуск
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "CHANGE_ME_TO_A_RANDOM_SECRET")
 ALGORITHM = "HS256"
-TOKEN_EXPIRE_MINUTES = 60
+TOKEN_EXPIRE_MINUTES = 60  # Токен живет 1 час, потом сгорает
 
+# "Мясорубка" для паролей: превращает пароль в хэш, чтобы не хранить его в открытом виде
 password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
@@ -39,6 +42,7 @@ app = FastAPI(
 # =========================
 # CORS
 # =========================
+# Разрешаю запросы с любого сайта, чтобы браузер не блокировал мой фронтенд
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -46,13 +50,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
 # =========================
 # LOAD CSV DATA
 # =========================
+# Загружаю CSV-файлы в память при старте сервера, чтобы потом искать в них данные за миллисекунды
 try:
     forecast_df = pd.read_csv(FORECAST_FILE)
     routes_df = pd.read_csv(ROUTES_FILE)
 
+    # Превращаю колонку с датой в настоящие даты, чтобы можно было сравнивать
     forecast_df["date"] = pd.to_datetime(
         forecast_df["date"], errors="coerce"
     ).dt.date
@@ -62,11 +69,13 @@ except Exception as e:
 # =========================
 # DATABASE
 # =========================
+# Функция для подключения к базе. Возвращает соединение, через которое делаю запросы
 def get_db():
     connection = sqlite3.connect(DATABASE_FILE)
-    connection.row_factory = sqlite3.Row
+    connection.row_factory = sqlite3.Row  # Чтобы данные возвращались как словарь
     return connection
 
+# Создаю таблицу пользователей, если её еще нет
 def init_db():
     with get_db() as db:
         db.execute("""
@@ -82,10 +91,12 @@ init_db()
 # =========================
 # REQUEST MODELS
 # =========================
+# Шаблон для регистрации: проверяю, что логин от 3 до 50 символов, а пароль от 8 до 128
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=8, max_length=128, description="Пароль от 8 до 128 символов")
 
+    # Добавил проверку на сложность пароля, чтобы нельзя было зарегистрироваться с "123456"
     @field_validator('password')
     def check_password_strength(cls, v):
         if not re.search(r"[A-Z]", v):
@@ -98,10 +109,12 @@ class RegisterRequest(BaseModel):
             raise ValueError('Пароль должен содержать хотя бы один спецсимвол (!@#$%^&*)')
         return v
 
+# Шаблон для входа: нужны только логин и пароль
 class LoginRequest(BaseModel):
     username: str
     password: str
 
+# Шаблон для прогноза: маршрут, дата и цена (цена обязательно больше нуля)
 class PredictRequest(BaseModel):
     route: str
     date: date
@@ -110,6 +123,7 @@ class PredictRequest(BaseModel):
 # =========================
 # AUTHENTICATION
 # =========================
+# Создаю JWT-токен (пропуск). Внутри него логин и время жизни, подписано секретным ключом
 def create_access_token(username: str):
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=TOKEN_EXPIRE_MINUTES
@@ -122,6 +136,7 @@ def create_access_token(username: str):
 
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
+# "Охранник": проверяет токен при каждом запросе. Если токен невалидный не пускает
 def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_error = HTTPException(
         status_code=401,
@@ -158,6 +173,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 # =========================
 # REGISTER
 # =========================
+# Эндпоинт для регистрации: хэширую пароль и записываю в базу
 @app.post("/register")
 def register(data: RegisterRequest):
     hashed_password = password_hash.hash(data.password)
@@ -177,6 +193,7 @@ def register(data: RegisterRequest):
         }
 
     except sqlite3.IntegrityError:
+        # Если логин уже есть, база выдает ошибку то я ловлю её и возвращаю 409
         raise HTTPException(
             status_code=409,
             detail="Username already exists"
@@ -185,6 +202,7 @@ def register(data: RegisterRequest):
 # =========================
 # LOGIN
 # =========================
+# Эндпоинт для входа: ищу пользователя, проверяю хэш пароля и выдаю токен
 @app.post("/login")
 def login(data: LoginRequest):
     with get_db() as db:
@@ -216,12 +234,13 @@ def login(data: LoginRequest):
 # =========================
 # DEMAND PREDICTION
 # =========================
+# Главный эндпоинт: защищен токеном, ищет данные в CSV и считает прогноз
 @app.post("/predict")
 def predict(
     request: PredictRequest,
     current_user=Depends(get_current_user)
 ):
-    # 1. Find forecast by route and date
+    # 1. Ищу строку с прогнозом по маршруту и дате
     forecast = forecast_df[
         (forecast_df["route"] == request.route) &
         (forecast_df["date"] == request.date)
@@ -235,7 +254,7 @@ def predict(
 
     forecast_row = forecast.iloc[0]
 
-    # 2. Find route parameters
+    # 2. Ищу параметры маршрута (базовую цену и чувствительность) в справочнике
     route_data = routes_df[
         routes_df["route"] == request.route
     ]
@@ -253,7 +272,7 @@ def predict(
 
     seats = int(forecast_row["seats"])
 
-    # 3. Calculate main demand using median (0.5) forecast
+    # 3. Считаю спрос по формуле. Если цена ниже базовой, спрос растет, если выше то падает
     base_demand = float(forecast_row["0.5_base_demand"])
 
     desired_demand = (
@@ -261,11 +280,12 @@ def predict(
         price_sensitivity * (request.price - base_price)
     )
 
+    # Защита от отрицательного спроса и от переполнения самолета
     desired_demand = max(0, desired_demand)
 
     sold = min(seats, desired_demand)
 
-    # 4. Collect all nine quantiles
+    # 4. Собираю все 9 квантилей для графика
     quantiles = {}
 
     for q in range(1, 10):
@@ -283,19 +303,19 @@ def predict(
                 detail=f"Missing columns for quantile {quantile}"
             )
 
-        # Пересчитываем спрос для графика без ограничения по местам
+        # Пересчитываю спрос для графика без ограничения по местам, чтобы было видно, упирается ли спрос в seats
         q_base_demand = float(forecast_row[f"{quantile}_base_demand"])
         q_price = float(forecast_row[price_column])
 
         q_desired = q_base_demand - price_sensitivity * (request.price - base_price)
-        q_demand = max(0.0, q_desired)  # Без min(seats, ...)
+        q_demand = max(0.0, q_desired)  # Без min(seats, ...) чтобы показать реальный спрос
 
         quantiles[quantile] = {
             "demand": q_demand,
             "price": q_price
         }
 
-       # 5. Return response
+    # 5. Возвращаю ответ: маршрут, дату, места, проданные билеты и квантили для графика
     return {
         "route": request.route,
         "date": request.date.isoformat(),
@@ -307,6 +327,7 @@ def predict(
 # =========================
 # HEALTH CHECK
 # =========================
+# Отдаю index.html, когда захожу на главную страницу сайта
 @app.get("/")
 async def read_index():
     return FileResponse("index.html")
